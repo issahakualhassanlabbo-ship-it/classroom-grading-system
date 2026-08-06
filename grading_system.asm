@@ -2,12 +2,12 @@
 ; 64-bit NASM Assembly for Linux - V3 (Role-Based Access Control)
 
 section .data
-    login_menu_msg db 10, "--- Login Menu ---", 10
-                   db "1. Login as Admin", 10
-                   db "2. Continue as Guest", 10
-                   db "3. Exit", 10
+    login_menu_msg db 10, "--- Login Menu ---", 10      ; db (Define Byte): Stores ASCII chars in memory. 10 is ASCII for newline
+                   db "1. Login as Admin", 10           ; and 0 is the null terminator marking the end of the string.
+                   db "2. Continue as Guest", 10        ; The subsequent admin and guest menu blocks do the exact same thing
+                   db "3. Exit", 10                     ; for the other application states.
                    db "Enter choice: ", 0
-    login_menu_len equ $ - login_menu_msg
+    login_menu_len equ $ - login_menu_msg               ; Calculates the length of the string dynamically.
 
     admin_menu_msg db 10, "--- Admin Menu ---", 10
                    db "1. Add Student Record", 10
@@ -23,9 +23,9 @@ section .data
                    db "Enter choice: ", 0
     guest_menu_len equ $ - guest_menu_msg
 
-    admin_pass db "assembly254", 0
-    prompt_pass db "Enter Admin Password: ", 0
-    prompt_pass_len equ $ - prompt_pass
+    admin_pass db "assembly254", 0                      ; Stores the hardcoded administrator password. Because it ends with a 0,
+    prompt_pass db "Enter Admin Password: ", 0          ; the custom strcmp function later can loop through it character by 
+    prompt_pass_len equ $ - prompt_pass                 ; character until it hits the 0 to know it has reached the end.
     msg_wrong_pass db "Error: Incorrect Password.", 10, 0
     msg_wrong_pass_len equ $ - msg_wrong_pass
 
@@ -129,45 +129,46 @@ section .data
     name_lens dq name_csm252_len, name_csm254_len, name_csm258_len, name_csm260_len, name_csm264_len, name_csm266_len, name_csm292_len, name_engl264_len
 
     ; Fixed Credit Hours Array
-    course_credits dq 2, 3, 3, 2, 3, 3, 2, 1
+    course_credits dq 2, 3, 3, 2, 3, 3, 2, 1            ; dq (Define Quadword): Stores 8-byte integers for our fixed credits
 
 section .bss
-    MAX_STUDENTS equ 100
-    STUDENT_SIZE equ 96
-    students resb MAX_STUDENTS * STUDENT_SIZE
-    num_students resq 1
+    MAX_STUDENTS equ 100                                ; equ (Equals): Defines a constant. Acts like #define in C++.
+    STUDENT_SIZE equ 96                                 ; Tells the assembler to replace this everywhere, consuming no memory space.
+
+    students resb MAX_STUDENTS * STUDENT_SIZE           ; resb (Reserve Bytes): Instructs OS to carve out a contiguous memory block.
+    num_students resq 1                                 ; resq (Reserve Quadword): Reserves 8 bytes for our student counter.
     input_buf resb 64
 
 section .text
     global _start
 
 _start:
-    mov qword [num_students], 0
+    mov qword [num_students], 0                         ; Initializes the global student counter to 0 upon startup
 
 ; ---------------------------------------------------------
 ; MENU LOOPS
 ; ---------------------------------------------------------
 
 login_loop:
-    mov rax, 1
-    mov rdi, 1
-    mov rsi, login_menu_msg
-    mov rdx, login_menu_len
+    mov rax, 1                                          ; Setting rax to 1 specifies the "sys_write" system call
+    mov rdi, 1                                          ; Setting rdi to 1 specifies standard output (the terminal)
+    mov rsi, login_menu_msg                             ; rsi holds the pointer to the string we want to print
+    mov rdx, login_menu_len                             ; rdx holds the length of the string to print
+    syscall                                             ; Triggers the kernel to execute the system call we prepared
+
+    mov rax, 0                                          ; Setting rax to 0 specifies the "sys_read" system call
+    mov rdi, 0                                          ; Setting rdi to 0 specifies standard input (keyboard)
+    mov rsi, input_buf                                  ; Tells the kernel to store what the user types into input_buf
+    mov rdx, 64                                         ; Allows up to 64 bytes to be read
     syscall
 
-    mov rax, 0
-    mov rdi, 0
-    mov rsi, input_buf
-    mov rdx, 64
-    syscall
-
-    cmp byte [input_buf], '1'
-    je login_admin
+    cmp byte [input_buf], '1'                           ; cmp (Compare): Checks if the first typed character is '1'
+    je login_admin                                      ; je (Jump if Equal): If it was '1', jump to the login_admin label
     cmp byte [input_buf], '2'
     je guest_loop
     cmp byte [input_buf], '3'
     je exit_program
-    jmp login_loop
+    jmp login_loop                                      ; jmp (Unconditional Jump): If invalid input, restart loop
 
 login_admin:
     mov rax, 1
@@ -182,20 +183,20 @@ login_admin:
     mov rdx, 64
     syscall
 
-    mov rcx, rax
-    test rcx, rcx
-    jz .do_compare
+    mov rcx, rax                                        ; rax holds the number of bytes read. We move this to rcx to use as a counter
+    test rcx, rcx                                       ; test: Checks if rcx is 0 (meaning nothing was read)
+    jz .do_compare                                      ; jz (Jump if Zero): Skip replacing newline if nothing was read
     dec rcx
     cmp byte [input_buf + rcx], 10
     jne .do_compare
     mov byte [input_buf + rcx], 0
 
 .do_compare:
-    mov rsi, input_buf
+    mov rsi, input_buf                                  ; Set up string pointers for strcmp function
     mov rdi, admin_pass
-    call strcmp
+    call strcmp                                         ; call: Pushes return address to stack and jumps to strcmp function
     test rax, rax
-    jz admin_loop
+    jz admin_loop                                       ; strcmp returns 0 in rax if strings match. If so, jump to admin_loop
 
     mov rax, 1
     mov rdi, 1
@@ -218,7 +219,7 @@ admin_loop:
     syscall
 
     cmp byte [input_buf], '1'
-    jne .ch2
+    jne .ch2                                            ; jne (Jump if Not Equal): If not '1', check next option
     call add_student
     jmp admin_loop
 .ch2:
@@ -280,20 +281,20 @@ add_student:
     mov rdx, 64
     syscall
 
-    cmp rax, 9
-    jne .invalid_id
+    cmp rax, 9                                          ; Validation Block: Checks if exactly 9 bytes were read (8 digits + 1 Enter key)
+    jne .invalid_id                                     ; Rejects if less or more than 8 digits were typed
     cmp byte [input_buf + 8], 10
     jne .invalid_id
 
     mov byte [input_buf + 8], 0
 
     mov rcx, 0
-.check_digits:
+.check_digits:                                          ; Loop that traverses the input string character by character
     mov al, [input_buf + rcx]
-    cmp al, '0'
-    jl .invalid_id
+    cmp al, '0'                                         ; Compares character to ASCII '0'
+    jl .invalid_id                                      ; jl (Jump if Less): Rejects if it's a special char or letter below '0'
     cmp al, '9'
-    jg .invalid_id
+    jg .invalid_id                                      ; jg (Jump if Greater): Rejects letters above '9'
     inc rcx
     cmp rcx, 8
     jl .check_digits
@@ -302,7 +303,7 @@ add_student:
     test r12, r12
     jz .valid_id_no_dups
     
-    lea r13, [students]
+    lea r13, [students]                                 ; lea (Load Effective Address): Grabs the start address of our memory block
 .check_dup_loop:
     mov rsi, input_buf
     mov rdi, r13
@@ -310,15 +311,15 @@ add_student:
     test rax, rax
     jz .duplicate_found
 
-    add r13, STUDENT_SIZE
+    add r13, STUDENT_SIZE                               ; Moves pointer forward by 96 bytes to point to the next student record
     dec r12
-    jnz .check_dup_loop
+    jnz .check_dup_loop                                 ; jnz (Jump if Not Zero): Continues loop until r12 hits 0
 
 .valid_id_no_dups:
     mov rax, [num_students]
     mov rbx, STUDENT_SIZE
-    mul rbx
-    lea r12, [students + rax]
+    mul rbx                                             ; mul (Multiply): rax = num_students * 96 to find byte offset for new student
+    lea r12, [students + rax]                           ; r12 now securely points to the exact memory location for this new student
 
     mov rsi, input_buf
     mov rdi, r12
@@ -326,16 +327,16 @@ add_student:
 
     mov rcx, 0
 .read_marks_loop:
-    push rcx
-    mov rsi, [prompts + rcx*8]
+    push rcx                                            ; push: Temporarily saves our loop counter (rcx) on the stack
+    mov rsi, [prompts + rcx*8]                          ; Dynamically loads the specific course prompt using pointer arithmetic
     mov rdx, [prompt_lens + rcx*8]
     mov rax, 1
     mov rdi, 1
     syscall
 
     call read_int
-    pop rcx
-    mov [r12 + 16 + rcx*8], rax
+    pop rcx                                             ; pop: Restores our loop counter from the stack after the function call
+    mov [r12 + 16 + rcx*8], rax                         ; Saves the integer mark to memory (16 byte offset past the ID)
     
     inc rcx
     cmp rcx, 8
@@ -344,7 +345,7 @@ add_student:
     mov r13, r12
     call calculate_cwa
 
-    inc qword [num_students]
+    inc qword [num_students]                            ; qword: Tells assembler to increment a full 64-bit value in memory
 
     mov rax, 1
     mov rdi, 1
@@ -354,7 +355,7 @@ add_student:
 
     mov r13, r12
     call print_student_details
-    ret
+    ret                                                 ; ret (Return): Jumps execution back to the caller (admin_loop)
 
 .invalid_id:
     mov rax, 1
@@ -423,7 +424,7 @@ update_student:
 
 .found:
     mov rcx, 0
-.update_loop:
+.update_loop:                                           ; Smart Update Loop: Iterates over the 8 courses, skipping unmodified ones
     push rcx
     mov rsi, [mod_prompts + rcx*8]
     mov rdx, [mod_lens + rcx*8]
@@ -438,7 +439,7 @@ update_student:
     syscall
 
     mov al, [input_buf]
-    cmp al, 'Y'
+    cmp al, 'Y'                                         ; Checks if admin typed 'Y' or 'y'. If neither, it jumps to skip_modify
     je .do_modify
     cmp al, 'y'
     je .do_modify
@@ -535,8 +536,8 @@ search_student:
 
 
 exit_program:
-    mov rax, 60
-    xor rdi, rdi
+    mov rax, 60                                         ; 60 is the syscall code for sys_exit in Linux
+    xor rdi, rdi                                        ; xor rdi, rdi: A fast way to set rdi to 0 (return code 0 means success)
     syscall
 
 
@@ -551,22 +552,22 @@ calculate_cwa:
     push rdx
     push r14
 
-    xor r14, r14 
+    xor r14, r14                                        ; Zeros out r14 to use as our running weighted sum
     xor rcx, rcx
 .calc_cwa_loop:
-    mov rax, [r13 + 16 + rcx*8]
-    mov rbx, [course_credits + rcx*8]
-    mul rbx
-    add r14, rax
+    mov rax, [r13 + 16 + rcx*8]                         ; Loads the student's integer mark for course (rcx)
+    mov rbx, [course_credits + rcx*8]                   ; Loads the fixed credit hour for that same course
+    mul rbx                                             ; Hardware multiply: Multiplies rax * rbx and stores result in rax
+    add r14, rax                                        ; Adds the result to our running sum in r14
     inc rcx
     cmp rcx, 8
     jl .calc_cwa_loop
 
     mov rax, r14
-    xor rdx, rdx
-    mov rbx, 19
-    div rbx
-    mov [r13 + 80], rax 
+    xor rdx, rdx                                        ; Zeros out rdx. The div instruction uses rdx:rax as a combined 128-bit dividend
+    mov rbx, 19                                         ; 19 is the hardcoded sum of all 8 course credit hours
+    div rbx                                             ; Hardware divide: Divides rdx:rax by rbx. The integer quotient goes into rax
+    mov [r13 + 80], rax                                 ; Stores the final CWA quotient into memory at the 80-byte offset
 
     pop r14
     pop rdx
@@ -662,15 +663,15 @@ print_student_details:
     ret
 
 get_grade_string:
-    cmp rax, 70
-    jge .grade_A
+    cmp rax, 70                                         ; Grade Scale Block: Compares the integer CWA against boundaries
+    jge .grade_A                                        ; jge (Jump if Greater/Equal): Jumps straight to .grade_A if it's 70 or higher
     cmp rax, 60
     jge .grade_B
     cmp rax, 50
     jge .grade_C
     cmp rax, 40
     jge .grade_D
-    jmp .grade_F
+    jmp .grade_F                                        ; Fails gracefully to F if no boundaries are hit
 
 .grade_A:
     mov rsi, grade_A
@@ -725,8 +726,8 @@ read_int:
     pop rbx
     ret
 
-atoi:
-    xor rax, rax
+atoi:                                                   ; atoi (ASCII to Integer): Custom function since we can't use C libraries.
+    xor rax, rax                                        ; Converts a typed string like "95" into the raw binary value 95.
     xor rcx, rcx
 .loop:
     mov cl, [rsi]
@@ -738,18 +739,18 @@ atoi:
     jl .done
     cmp cl, '9'
     jg .done
-    sub cl, '0'
+    sub cl, '0'                                         ; Subtracts '0' ASCII offset to get the raw integer value of the digit
     push rdx
     mov rbx, 10
-    mul rbx
+    mul rbx                                             ; Multiplies the running total by 10 to shift digits left (e.g. 9 -> 90)
     pop rdx
-    add rax, rcx
+    add rax, rcx                                        ; Adds the newly parsed digit (e.g. 90 + 5 = 95)
     inc rsi
     jmp .loop
 .done:
     ret
 
-print_int:
+print_int:                                              ; print_int: Reverses atoi. Takes a raw binary integer and turns it into ASCII
     push rax
     push rbx
     push rcx
@@ -774,8 +775,8 @@ print_int:
     test rax, rax
     jz .print
     xor rdx, rdx
-    div rbx
-    add dl, '0'
+    div rbx                                             ; Extracts the right-most digit by dividing by 10. Remainder goes to rdx
+    add dl, '0'                                         ; Adds '0' ASCII offset to convert it back to printable text
     dec r8
     mov [r8], dl
     jmp .loop
